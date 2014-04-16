@@ -1,0 +1,3 @@
+Yan:
+1 Need to add user input functionality for master node.
+2 Need to add thread cancel functionality for master and file server to shutdown.
