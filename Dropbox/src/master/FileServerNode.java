@@ -7,11 +7,10 @@ import java.util.*;
  * 
  * class: FileServerNode
  * Description: Used for storing the connected file servers
+ *              CAUTION: this class is not reusable
  */
 class FileServerNode {
-
-	private Thread _thread;
-	private Thread _userThread;
+	
 	private Socket _userSocket;
 	private Socket _socket;
 	private String _ip;
@@ -19,17 +18,23 @@ class FileServerNode {
 	private int _prio;
 	private int _maxClients;
 	private Map<String, String> _mp;
+	private boolean _alive;
+	private MasterServerFileServerAccept _fsaNet;
+	private MasterServerFileServerRequest _fsqNet;
 	
 	public FileServerNode(){
 		_mp = new TreeMap<String, String>();
+		_alive = true;
 	}
 	
-	public synchronized void setThread(Thread t){ 
-		_thread = t;
+	public synchronized void setRequestThread(MasterServerFileServerRequest fsqNet){ 
+		assert _fsqNet == null;
+		_fsqNet = fsqNet;
 	}
 	
-	public synchronized void setUserThread(Thread ut){ 
-		_userThread = ut;
+	public synchronized void setAcceptThread(MasterServerFileServerAccept fsaNet){ 
+		assert _fsaNet == null;
+		_fsaNet = fsaNet;	
 	}
 	
 	public synchronized void setSocket(Socket s){
@@ -38,6 +43,7 @@ class FileServerNode {
 	}
 	
 	public synchronized void setUserSocket(Socket s){
+		assert _userSocket == null;
 		_userSocket = s;
 	}
 	
@@ -77,6 +83,10 @@ class FileServerNode {
 		return _ip;
 	}
 	
+	public boolean isAlive(){
+		return _alive;
+	}
+	
 	public synchronized void clearMap(){
 		_mp.clear();
 	}
@@ -85,17 +95,27 @@ class FileServerNode {
 		_mp.put(key, val);
 	}
 	
+	public synchronized void destroy(){
+		clear();
+		_alive = false;
+	}
+	
 	public synchronized void clear(){
 		// TODO: cancel threads
+		if(!_fsqNet.terminated()){
+			_fsqNet.stop();
+		}
 		try
 		{
-			if(!_userSocket.isClosed())
+			if(_userSocket != null && !_userSocket.isClosed())
 				_userSocket.close();
-			if(!_socket.isClosed())
+			if(_socket != null &&!_socket.isClosed())
 				_socket.close();
 		}catch(IOException e){
 			e.printStackTrace();
 		}
+		_userSocket = null;
+		_socket = null;
 		_ip = null;
 		_mp.clear();
 		_mp = null;

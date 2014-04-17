@@ -8,8 +8,9 @@ package master;
  */
 class MasterServerNet {
 
-	private Thread _threadCluster;
-	private Thread _threadClients;
+	private MasterServerClusterNet _clusterNet;
+	private MasterServerClientNet _clientsNet;
+	//private Thread _threadClients;
 	private MasterServer _server;
 	
 	private void _dlog(String str){
@@ -30,7 +31,7 @@ class MasterServerNet {
 	 * class ClusterListner
 	 * Description: The thread for listening new file server
 	 */
-	private class ClusterListener implements Runnable{
+	/*private class ClusterListener implements Runnable{
 		
 		private MasterServerClusterNet _net;
 		
@@ -42,13 +43,13 @@ class MasterServerNet {
 			_net.listen();
 		}
 	}
-	
+	*/
 	/**
 	 * 
 	 * class ClientListner
 	 * Description: The thread for listening new client
 	 */
-	private class ClientListener implements Runnable{
+	/*private class ClientListener implements Runnable{
 		
 		private MasterServerClientNet _net;
 		
@@ -58,21 +59,34 @@ class MasterServerNet {
 		public void run(){
 			_net.listen();
 		}
-	}
+	}*/
 	
+	public void run(){
+		//TODO: to be filled later, I want the main thread to do something 
+		//      more useful
+		
+		// Spawn a new thread to listen new clusters
+		listenToCluster();
+		
+		// Spawn a new thread to listen new clients
+		listenToClients();
+		
+	}
 	public MasterServerNet(MasterServer server){
 		_server = server;
-		_threadCluster = null;
-		_threadClients = null;
+		_clusterNet = new MasterServerClusterNet(_server);
+		
+		//_threadCluster = null;
+		//_threadClients = null;
 	}
 	
 	public void listenToCluster(){
-		_threadCluster =  new Thread(new ClusterListener(_server));
-		_threadCluster.start();
+		assert _clusterNet != null;
+		_clusterNet.start();
 	}
 	
 	public void listenToClients(){
-		_threadClients = new Thread(new ClientListener(_server));
-		_threadClients.start();
+		//_threadClients = new Thread(new ClientListener(_server));
+		//_threadClients.start();
 	}
 }

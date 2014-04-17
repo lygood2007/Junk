@@ -2,15 +2,12 @@ package fileserver;
 
 import java.io.*;
 import java.net.*;
-//import java.util.*;
-
-import common.ListenNet;
 /**
  * 
  * Class: DropboxFileServerClientNet
  * Description: Listen to new client connected
  */
-class DropboxFileServerClientNet implements ListenNet{
+class DropboxFileServerClientNet{
 
 	
 	private ServerSocket _serverSocket;
@@ -34,7 +31,6 @@ class DropboxFileServerClientNet implements ListenNet{
 		assert _server != null;
 	}
 	
-	@Override
 	public void listen(){
 		_log("listening to new client...");
     	Socket client = null;
@@ -55,14 +51,16 @@ class DropboxFileServerClientNet implements ListenNet{
     			t.start();
     		}
     	}catch(InterruptedIOException e){
-    		_elog("Time out");
-    		if(_server.debugMode())
+    		_elog(e.toString());
+    		if(_server.debugMode()){
     			e.printStackTrace();
+    		}
     		
     	}catch(IOException e){
-    		_elog("IO error occurs");
-    		if(_server.debugMode())
+    		_elog(e.toString());
+    		if(_server.debugMode()){
     			e.printStackTrace();
+    		}
     	}finally{
     		try{
     			_log("Close connection from " + client.getInetAddress().getHostAddress());
@@ -71,9 +69,10 @@ class DropboxFileServerClientNet implements ListenNet{
     			if( client != null )
     				client.close();
     		}catch(IOException e){
-    			_elog("IO error occurs when closing socket");
-        		if(_server.debugMode())
+    			_elog(e.toString());
+        		if(_server.debugMode()){
         			e.printStackTrace();
+        		}
     		}
     	}
 	}

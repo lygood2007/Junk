@@ -3,13 +3,12 @@ package master;
 import java.io.*;
 import java.net.*;
 import java.util.*;
-import common.ListenNet;
 /**
  * 
  * class: MasterServerClientNet
  * Description: Listen to clients connected and spawn a new thread to handle it
  */
-class MasterServerClientNet implements ListenNet {
+class MasterServerClientNet{
 	private ServerSocket _serverSocket;
 	private Timer _timer;
 	// TODO: should handle non-running threads, remove the reference of it?
@@ -92,14 +91,16 @@ class MasterServerClientNet implements ListenNet {
     			_threads.add(t);
     		}
     	}catch(InterruptedIOException e){
-    		_elog("Time out");
-    		if(_server.debugMode())
+    		_elog(e.toString());
+    		if(_server.debugMode()){
     			e.printStackTrace();
+    		}
     		
     	}catch(IOException e){
-    		_elog("IO error occurs");
-    		if(_server.debugMode())
+    		_elog(e.toString());
+    		if(_server.debugMode()){
     			e.printStackTrace();
+    		}
     	}finally{
     		try{
     			_dlog("Close connection from " + client.getInetAddress().getHostAddress());
@@ -108,9 +109,10 @@ class MasterServerClientNet implements ListenNet {
     			if( client != null )
     				client.close();
     		}catch(IOException e){
-    			_elog("IO error occurs when closing socket");
-        		if(_server.debugMode())
+    			_elog(e.toString());
+        		if(_server.debugMode()){
         			e.printStackTrace();
+        		}
     		}
     	}
 	}

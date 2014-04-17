@@ -1,5 +1,5 @@
-/master
-/fileserver
-/client
 /common
-/utils
+/fileserver
+/master
+/client
+/.DS_Store

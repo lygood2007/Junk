@@ -7,7 +7,7 @@ import java.io.*;
  * Class MasterServerFileServerHandler
  * Description: Handles the new connected file server
  */
-class MasterServerFileServerHandler implements Runnable{
+class MasterServerFileServerAccept implements Runnable{
 	private Socket _sock;
 	private BufferedReader _in;
 	private PrintWriter _out;
@@ -26,14 +26,16 @@ class MasterServerFileServerHandler implements Runnable{
 		System.out.println("[MasterServerFileServerHandler]:" + str);
 	}
 	
-	public MasterServerFileServerHandler(Socket sock,MasterServer server){
+	public MasterServerFileServerAccept(Socket sock,MasterServer server){
 		_sock = sock;
 		_server = server;
+		_elog("adsasd");
 		assert _server != null;
 		try{
 		_out = new PrintWriter(_sock.getOutputStream(), true);
 		_in = new BufferedReader(new InputStreamReader(_sock.getInputStream()));
 		}catch(IOException e){
+			_elog(e.toString());
 			if(_server.debugMode()){
 				e.printStackTrace();
 			}
@@ -42,7 +44,13 @@ class MasterServerFileServerHandler implements Runnable{
 	
 	@Override
 	public void run(){
-		
+		/*try{
+			_sock.close();
+			_out.close();
+			_in.close();
+		}catch(IOException e){
+			e.printStackTrace();
+		}*/
 	}
 	
 	public Socket getSocket(){

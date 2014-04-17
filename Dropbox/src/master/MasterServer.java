@@ -1,6 +1,7 @@
 package master;
 
 import common.*;
+
 import java.util.*;
 
 
@@ -40,7 +41,9 @@ class MasterServer {
 		_useUI = useUI;
 		_debug = debug;
 		_map = new HashMap<String, Integer>();
-		_fsnodes = new LinkedList<FileServerNode>();
+		
+		// Use tomic list 
+		_fsnodes = /*(LinkedList<FileServerNode>) Collections.synchronizedList(*/new LinkedList<FileServerNode>();
 		initNet();
 		initTimer();
 		printStatus();
@@ -55,9 +58,9 @@ class MasterServer {
 		_timer.scheduleAtFixedRate(new Echo(this), 1000, 1000);
 	}
 	
-	public void listen(){
+	public void run(){
 		//_serverNet.listenToClients();
-		_serverNet.listenToCluster();
+		_serverNet.run();
 	}
 	
 	public void printStatus(){
@@ -73,8 +76,8 @@ class MasterServer {
 		_log("Master Server:");
 		_log("-d: for debug mode (default false)" );
 		_log("-u: to use user interface (default false)");
-		_log("-cp: to specify the listen port for clients (default 8086)");
-		_log("-lp: to specify the listen port for cluster (default 8080)");
+		_log("-cp: to specify the listen port for clients (default " + DropboxConstants.MASTER_CLIENT_PORT+")");
+		_log("-lp: to specify the listen port for cluster (default " + DropboxConstants.MASTER_CLUSTER_PORT+")");
     	System.out.println();
 	}
 	
@@ -143,12 +146,31 @@ class MasterServer {
 		}
 	}
 	
-	/* Periodically print out the status of all file server*/
+	public void garbageCollection(){
+		_dlog("Run garbage collection");
+		/* Need to use iterator to loop */
+		Iterator<FileServerNode> it = _fsnodes.iterator();
+		while(it.hasNext()){
+			FileServerNode node = it.next();
+			if(!node.isAlive()){
+				_log("Remove " + node.getID());
+				it.remove();
+			}
+		}
+	}
+	
+	/**
+	 * 
+	 * class Echo
+	 * Description: Walk through the linked list and do garbage collection.
+	 *              Also print out the status of the server
+	 */
 	private class Echo extends TimerTask{
 		
 		private MasterServer _server;
+		
 		private void _log(String str){
-			System.out.println("Echo:"+str);
+			System.out.println("[Echo]:"+str);
 		}
 		public Echo(MasterServer server){
 			_server = server;
@@ -156,8 +178,10 @@ class MasterServer {
 		
 		@Override
 		public void run(){
+			garbageCollection();
 			printFileServers();
 		}
+		
 	}
 	
 	public static void main(String[] args) {
@@ -182,6 +206,6 @@ class MasterServer {
     	}
 		
 		MasterServer server = new MasterServer(clientPort, clusterPort, useUI, debug);
-		server.listen();
+		server.run();
 	}
 }

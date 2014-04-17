@@ -4,17 +4,16 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
-import common.ListenNet;
-import common.ProtocolConstants;
+import common.*;
+
 /**
  * 
  * class MasterServerClusterNet
  * Description: Listen to new file server connected and spawn a new thread to handle it
  */
-class MasterServerClusterNet implements ListenNet{
+class MasterServerClusterNet extends ThreadBase {
 	private MasterServer _server;
 	private ServerSocket _serverSocket;
-	//private Thread _thread;
 	
 	private void _dlog(String str){
 		if(_server.debugMode())
@@ -30,22 +29,28 @@ class MasterServerClusterNet implements ListenNet{
 	}
 	
 	public MasterServerClusterNet(MasterServer server){
+		super("MasterServerClusterNet",server.debugMode());
 		_server = server;
 		assert _server != null;
 	}
 	
-	private String receive(BufferedReader in){
+	private String receive(BufferedReader in) throws Exception{
 		String from = null;
 		try{
 			if((from = in.readLine()) == null)
 				throw new Exception("No response received");
 		}catch(Exception e){
-			_dlog("Receiving message response error");
+			_elog(e.toString());
+			// If it gets here, it means the socket is closed by the 
+			// other side
+			throw new Exception("Connection is broken");
 		}
 		return from;
 	}
 	
 	private void parse(String str, Socket s){
+		assert str != null;
+		assert s != null;
 		StringTokenizer st = new StringTokenizer(str);
 		String tk = st.nextToken();
 		if(tk.equals(ProtocolConstants.PACK_STR_ID_HEAD)){
@@ -68,29 +73,34 @@ class MasterServerClusterNet implements ListenNet{
 			node.setSocket(s);
 			node.setPriority(prio);
 			node.setMaxClients(maxClientNum);
-			Thread t = new Thread(new MasterServerFileServerHandler(s, _server));
-			node.setThread(t);
-			t.start();
-			// Send back confirmation, temporary use
+			
 			try
 			{
+				BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()));
 				PrintWriter out = new PrintWriter(s.getOutputStream(), true);
+				// Send back confirmation, temporary use
 				out.println(ProtocolConstants.PACK_STR_CONFIRM_HEAD);
+				MasterServerFileServerRequest fsq = new MasterServerFileServerRequest(_server, out, in, s);
+				node.setRequestThread(fsq);
+				fsq.start();
 			}catch(IOException e){
-				e.printStackTrace();
+				_elog(e.toString());
+				if(_server.debugMode())
+					e.printStackTrace();
+				
+				return;
 			}
 			
 		}else if(tk.equals(ProtocolConstants.PACK_STR_USR_HEAD)){
 			int id = Integer.parseInt(st.nextToken());
-			Thread t = new Thread(new MasterServerFileServerHandler(s, _server));
+			Thread t = new Thread(new MasterServerFileServerAccept(s, _server));
 			FileServerNode node = _server.findFileServer(id);
 			if(node == null){
 				node = new FileServerNode();
 				_server.insertFileServer(node);
 			}
-			
-			node.setThread(t);
-			t.start();
+
+			//TODO
 			
 			// Send back confirmation, temporary use
 			try
@@ -98,58 +108,125 @@ class MasterServerClusterNet implements ListenNet{
 				PrintWriter out = new PrintWriter(s.getOutputStream(), true);
 				out.println(ProtocolConstants.PACK_STR_CONFIRM_HEAD);
 			}catch(IOException e){
-				e.printStackTrace();
+				_elog(e.toString());
+				if(_server.debugMode()){
+					e.printStackTrace();
+				}
 			}
-		}else{
+		}else if(tk.equals(ProtocolConstants.PACK_STR_CLOSE_HEAD)){
+			// Close both the socket
+			int id = Integer.parseInt(st.nextToken());
+			FileServerNode node = _server.findFileServer(id);
+			if(node != null){
+				node.clear();
+			}
+		}
+		else{
 			
 			//TODO: to be added
 			_elog("Invalid package");
 		}
 	}
 	
-	public void listen(){
-		_log("listening to new client...");
-		// Now only support one client
-    	
-    	try{
-    		_serverSocket = new ServerSocket(_server.clusterPort());
-    		_serverSocket.setSoTimeout(1000*100);
-    		while(true)
-    		{
-    			Socket fileServer = _serverSocket.accept();
-    			_log("Get connection from " + fileServer.getInetAddress().getHostAddress());
-    			//TODO: here, it should control how many threads we could accept at most
-    			
-    			// read the identification
-    			BufferedReader in = new BufferedReader(new InputStreamReader(fileServer.getInputStream()));
-    			String init = in.readLine();
-    			parse(init, fileServer);
-    		}
-    	}catch(InterruptedIOException e){
-    		_elog("Time out");
-    		if(_server.debugMode())
-    			e.printStackTrace();
-    		
-    	}catch(IOException e){
-    		_elog("IO error occurs");
-    		if(_server.debugMode())
-    			e.printStackTrace();
-    	}finally{
-    		try{
-    			//_log("Close connection from " + fileServer.getInetAddress().getHostAddress());
-    			if(_serverSocket != null )
-    				_serverSocket.close();
-    			/*if( fileServer != null )
-    				fileServer.close();*/
-    		}catch(IOException e){
-    			_elog("IO error occurs when closing socket");
-        		if(_server.debugMode())
-        			e.printStackTrace();
-    		}
-    	}
+	public void clear(){
+		_dlog("Do clear...");
+		
+		_dlog("Finished");
 	}
 	
-	// Setup a timer
+	@Override
+	public void run(){
+		_log("listening to new client...");
+		// Now only support one client
+		Thread thisThread = Thread.currentThread();
+		while(_t == thisThread){ // Cancel point
+			
+			try{
+				synchronized(this) {
+					while(_suspended) { // suspension point
+						wait();
+					}
+				}
+			}catch(InterruptedException e){ // Cancel point
+
+				if(_server.debugMode())
+					e.printStackTrace();
+				break;
+			}
+			
+			try{
+				_serverSocket = new ServerSocket(_server.clusterPort());
+				if(_server.debugMode()){
+					_dlog("Server timeout after 100 seconds");
+					_serverSocket.setSoTimeout(1000*100);
+				}
+				while(true)
+				{
+					synchronized(this) {
+						while(_suspended) { // suspension point
+							wait();
+						}
+					}
+					Socket fileServer = _serverSocket.accept();
+					_log("Get connection from " + fileServer.getInetAddress().getHostAddress());
+					//TODO: here, it should control how many threads we could accept at most
+
+					// read the identification
+					BufferedReader in = new BufferedReader(new InputStreamReader(fileServer.getInputStream()));
+					String init = receive(in);
+					/*if(init == null){
+						_elog("The connection from " + fileServer.getInetAddress().getHostAddress() 
+								+ "is closed");
+					}else{*/
+						parse(init, fileServer);
+					//}
+				}
+			}catch(InterruptedException e){ // Cancel point
+				_elog(e.toString());
+				if(_server.debugMode()){
+					e.printStackTrace();
+				}
+			}catch(InterruptedIOException e){
+				_elog(e.toString());
+				if(_server.debugMode()){
+					e.printStackTrace();
+				}
+				// exit
+			}catch(IOException e){
+				_elog(e.toString());
+				if(_server.debugMode()){
+					e.printStackTrace();
+				}
+				// exit
+			}catch(Exception e){
+				_elog(e.toString());
+				if(_server.debugMode()){
+					e.printStackTrace();
+				}
+			}
+			finally{
+				try{
+					// close the listen socket
+					if(_serverSocket != null )
+						_serverSocket.close();
+				}catch(IOException e){
+					_elog(e.toString());
+					if(_server.debugMode()){
+						e.printStackTrace();
+					}
+					// exit
+				}
+				// Stop the thread
+				stop();
+			}
+		}
+		_dlog("Stopped");
+		clear();
+	}
+	
+	// Setup a timer (Deprecated)
+	// TODO: good way to do garbage collection
+	/*
 	private class ThreadCollection extends TimerTask{ 
 
 		ArrayList<Thread> _threads;
@@ -166,17 +243,6 @@ class MasterServerClusterNet implements ListenNet{
 		public void run(){
 			_log("Threre are " + _threads.size() + " threads");
 
-			// Just use thread pool...
-			/*
-			for(int i = _threads.size()-1; i>= 0; i--){
-				Thread t= _threads.get(i);
-				// TODO: really useful here
-				// TEST
-				if(!t.isAlive()){
-					_threads.remove(i);
-				}
-			}
-			 */
 		}
-	}
+	}*/
 }

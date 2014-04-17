@@ -4,146 +4,113 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
-import common.*;
+import common.DropboxConstants;
+import common.ProtocolConstants;
 
-class DropboxFileServerUserNet implements Runnable{
-	
+/**
+ * 
+ * Class: DropboxFileServerMasterNet
+ * Description: Handles the connection to master net
+ */
+class DropboxFileServerMasterNet {
+
 	private DropboxFileServer _server;
+	private DropboxFileServerUserNet _userNet;
+	
+	private Socket _sock;
+	private PrintWriter _out;
+	private BufferedReader _in;
+	
+	private Socket _userSock;
 	private PrintWriter _userOut;
 	private BufferedReader _userIn;
-	private Socket _sock;
+	
+	/* Always use that for now */
+	private String _serverIP = DropboxConstants.MASTER_IP;
+	private int _serverPort = DropboxConstants.MASTER_CLUSTER_PORT;
 	
 	private void _dlog(String str){
 		if(_server.debugMode())
-			System.out.println("[DropboxFileServerUserNet (DEBUG)]:" + str);
+			System.out.println("[DropboxFileServerNet (DEBUG)]:" + str);
 	}
 	
-	private static void _elog(String str){
-		System.err.println("[DropboxFileServerUserNet (ERROR)]:" + str);
+	private void _elog(String str){
+		System.err.println("[DropboxFileServerNet (ERROR)]:" + str);
 	}
 	
-	private static void _log(String str){
-		System.out.println("[DropboxFileServerUserNet]:" + str);
+	private void _log(String str){
+		System.out.println("[DropboxFileServerNet]:" + str);
 	}
 	
-	public DropboxFileServerUserNet(DropboxFileServer server, PrintWriter userOut,
-			BufferedReader userIn, Socket sock){
-		_sock = sock;
+	public DropboxFileServerMasterNet(DropboxFileServer server){
+		// TODO: map is for future use
 		_server = server;
-		_userIn = userIn;
-		_userOut = userOut;
+		assert _server != null;
+		//_net = new DropboxFileServerMasterNettmp(_server);
 	}
 	
-	private void usage(){
-		_log("File Server usage:");
-		_log("-q: request the Master's status");
-		_log("-s: shutdown the current file server");
-		_log("-h: show usage0");
-		_log("-p: set the priority of this server (1 -> 5)");
-		_log("-d: toggle debug mode");
-		_log("-a: add a client (should be deprecated when client can connect to file server)");
-		_log("-r: remove a client (should be deprecated when client can connect to file server)");
+	public boolean openConnections(){
+		_log("Try to connect to Master...");
+		
+		_dlog("openConnections(){");
+		boolean isConnected = connect();
+		_dlog("}");
+		
+		if(!isConnected){
+			_log("Cannot connect to Master");
+			//TODO: make it better, not just simply kill the whole
+		}else{
+			_log("Success!");
+			//_clientThread = new Thread(new ClientListner(_server));
+			//_clientThread.start();
+			// Master net also spawn a new thread to get user input
+			// TODO: should spawn another new thread to get user input to simulate crash, etc.
+			//_net.spawnUserThread();
+			//_net.listen();
+		}
+		return isConnected;
+	}
+	
+	public void listen(){
+		// Firstly spawn a new thread and then the main thread also start listening
+		_userNet = new DropboxFileServerUserNet(_server, _userOut, _userIn, _userSock);
+		_userNet.start();
+		
+		/* Use main thread, cannot be stopped */
+		while(!_sock.isClosed()){
+			try
+			{
+				String line = receive(_in); // if it receives null, it means the connection is broken
+				_dlog(line);
+				parse(line);
+			}catch(Exception e){
+				_elog(e.toString());
+				break;
+				// Break the loop
+			}
+		}
+		
+		/* Clear */	
+		// Close main thread
+		close();
 	}
 	
 	private void parse(String str){
 		StringTokenizer st = new StringTokenizer(str);
-		if(st.countTokens() == 1){
-			if(str.equals("-q")){
-				// request the master's status
-			}else if(str.equals("-s")){
-
-			}else if(str.equals("-h")){
-				usage();
-			}else if(str.equals("-d")){
-				_server.toogleDebug();
-			}
-		}
-		else if(st.countTokens() == 2){
-			String tmp = st.nextToken();
-			if(tmp.equals("-p")){
-				_server.setPrio(Integer.parseInt(st.nextToken()));
-			}
-			else if(tmp.equals("-r")){
-				
-			}
-			else {
-				_elog("Invalid Input");
-			}
-		}
-		else if(st.countTokens() == 3){
+		String tkn = st.nextToken();
+		if(tkn.equals(ProtocolConstants.PACK_STR_HEARTBEAT_HEAD)){
+			_log("I got heartbeat");
+		}else if(tkn.equals(ProtocolConstants.PACK_STR_REQUEST_FS_HEAD)){
 			
+		}else{
+			_elog("Invalid header, skip.");
 		}
-		else{
-			_elog("Invalid input");
-		}
-	}
-	
-	@Override
-	public void run(){
-		usage();
-		Scanner in = new Scanner(System.in);
-		try
-			{
-		while(_sock.isConnected() && _sock.isClosed() && !Thread.currentThread().isInterrupted()){
-			Thread.sleep(1);
-			
-			_log("input:");
-			String s = in.nextLine();
-			
-			parse(s);
-			// TODO: to be added
-			_userOut.println(s);
-			}
-		}catch(InterruptedException e){
-				Thread.currentThread().interrupt();
-			}
-		
-		_log("The connection to master is broken");
-	}
-	
-	public void stop(){
-		Thread.currentThread().interrupt();
-	}
-}
-/**
- * 
- * Class: DropboxFileServerMasterNet
- * Description: Handles the network connection to master node, it actually has one pair of sockets,
- *              one for accepting master's request, one for sending file server's request 
- */
-class DropboxFileServerMasterNet implements ConnectNet{
-
-	private String _serverIP;
-	private int _serverPort;
-	private Socket _sock;
-	private Socket _userSock;
-	private PrintWriter _out;
-	private BufferedReader _in;
-	
-	private PrintWriter _userOut;
-	private BufferedReader _userIn;
-	private DropboxFileServer _server;
-	
-	private Thread _userThread;
-	//private ReentrantLock _lock;
-	
-	private void _dlog(String str){
-		if(_server.debugMode())
-			System.out.println("[DropboxFileServerMasterNet (DEBUG)]:" + str);
-	}
-	
-	private static void _elog(String str){
-		System.err.println("[DropboxFileServerMasterNet (ERROR)]:" + str);
-	}
-	
-	private static void _log(String str){
-		System.out.println("[DropboxFileServerMasterNet]:" + str);
 	}
 	
 	public void sendAll(){
 		assert _out != null;
-		String output = Integer.toString(_server.getID()) + " " + Integer.toString(_server.getPrio()) +
-				" " + Integer.toString(_server.getMaxClientNum());
+		String output = _server.getID() + " " + _server.getPrio() +
+				" " + _server.getMaxClientNum();
 		Map<String, String> mp = _server.getMap();
 		Iterator it = mp.entrySet().iterator();
 		while(it.hasNext()){
@@ -156,12 +123,12 @@ class DropboxFileServerMasterNet implements ConnectNet{
 	
 	public void sendUserID(){
 		assert _userOut != null;
-		String output = ProtocolConstants.PACK_STR_USR_HEAD + " " + Integer.toString(_server.getID());
+		String output = ProtocolConstants.PACK_STR_USR_HEAD + " " + _server.getID();
 		_userOut.println(output);
 	}
 	
-	public boolean connect(){
-		_log("Trying to connect to master node...");
+	// TODO: setup a timeout mechanism, if the master is not running, retry.
+	private boolean connect(){
 		boolean connected = true;
 		try{
 			_sock = new Socket(_serverIP, _serverPort);
@@ -175,14 +142,16 @@ class DropboxFileServerMasterNet implements ConnectNet{
 			_userIn = new BufferedReader(new InputStreamReader(_userSock.getInputStream()));
 			sendUserID();
 		}catch(UnknownHostException e){
-			_elog("Unknown host!");
-			if(_server.debugMode())
+			_elog(e.toString());
+			if(_server.debugMode()){
 				e.printStackTrace();
+			}
 			connected = false;
 		}catch(IOException e){
-			_elog("Errors occur when creating socket");
-			if(_server.debugMode())
+			_elog(e.toString());
+			if(_server.debugMode()){
 				e.printStackTrace();
+			}
 			connected = false;
 		}
 		if(!connected){
@@ -190,6 +159,7 @@ class DropboxFileServerMasterNet implements ConnectNet{
 		}
 		try
 		{
+			
 			String response = receive(_in);
 			String responseUser = receive(_userIn);
 
@@ -198,9 +168,7 @@ class DropboxFileServerMasterNet implements ConnectNet{
 			if(response.equals(ProtocolConstants.PACK_STR_CONFIRM_HEAD)&&
 					responseUser.equals(ProtocolConstants.PACK_STR_CONFIRM_HEAD)){
 				connected = true;
-				_log("Successful connection to " + _serverIP + ":" + _serverPort);
-
-
+				
 				return connected;
 			}else{
 				connected = false;
@@ -208,6 +176,7 @@ class DropboxFileServerMasterNet implements ConnectNet{
 			}
 		}
 		catch(Exception e){
+			_elog(e.toString());
 			connected = false;
 		}
 		if(!connected){
@@ -223,117 +192,86 @@ class DropboxFileServerMasterNet implements ConnectNet{
 		return connected;
 	}
 	
-	public void spawnUserThread(){
-		assert _userIn != null && _userOut != null && _userSock != null;
-		
-		_userThread = new Thread(new DropboxFileServerUserNet(_server, _userOut, _userIn, _userSock));
-		_userThread.start();
-	}
-	public void listen(){
-		while(_sock.isConnected()&&!_sock.isClosed()){
-			try
-			{
-				String line = receive(_in); // if it receives null, it means the connection is broken
-				_dlog(line);
-				parse(line);
-			}catch(Exception e){
-				break;
-				// Break the loop
-			}
-		}
-		// No longer connected, close it
-		_log("socked is closed");
-	}
-	
-	private void parse(String str){
-		StringTokenizer st = new StringTokenizer(str);
-		String tkn = st.nextToken();
-		if(tkn.equals(ProtocolConstants.PACK_STR_HEARTBEAT_HEAD)){
-			
-		}else if(tkn.equals(ProtocolConstants.PACK_STR_REQUEST_FS_HEAD)){
-			
-		}else{
-			_elog("Invalid header, skip.");
-		}
-	}
-	
 	private String receive(BufferedReader in) throws Exception{
 		String from = null;
 		try{
 			if((from = in.readLine()) == null)
 				throw new Exception("No response received");
-		}catch(Exception e){
-			_dlog("Receiving message response error");
+		}catch(Exception e){ 
+			_elog(e.toString());
 			// So what does this mean, it usually means the connection is broken
 			throw new Exception("Connection is broken");
 		}
 		return from;
 	}
 	
-	/**
-	 * Close: close the connection
-	 */
-	public void close(){
-		
+	public void closeConnections(){
+		_log("Close the connection...");
+		close();
+	}
+	
+	private void close(){
+		_dlog("Do main thread closing...");
 		if(_sock != null && !_sock.isClosed()){
 			_dlog("Closing the receiving thread");
 			try{
 				_sock.close();
 				_in.close();
 				_out.close();
+				
+				_sock = null;
+				_in = null;
+				_out = null;
 				_dlog("Success!");
 			}catch(IOException e){
-				_elog("IO errors occur when closing socket");
-				if(_server.debugMode())
+				_elog(e.toString());
+				if(_server.debugMode()){
 					e.printStackTrace();
+				}
+			}
+		}
+		else{
+			if(_sock == null){
+				throw new NullPointerException();
+			}else{
+				_sock = null;
+				_in = null;
+				_out = null;
 			}
 		}
 		
-		_dlog("Closing the receiving thread");
+		_dlog("Cancel the user input thread");
+		if(_userNet != null){
+				_userNet.stop();
+				_userNet = null;
+		}
 		if(_userSock != null && !_userSock.isClosed()){
-			_userThread.interrupt();
+			_dlog("Closing the user input thread");
+			//Stop the user thread
 			try{
-				//TODO: I think close the socket will make the user thread stop
-				//      Need verification
 				_userSock.close();
 				_userIn.close();
 				_userOut.close();
+				_userSock = null;
+				_userIn = null;
+				_userOut = null;
 				_dlog("Success!");
 			}catch(IOException e){
-				_elog("IO errors occur when closing socket");
-				if(_server.debugMode())
+				_elog(e.toString());
+				if(_server.debugMode()){
 					e.printStackTrace();
+				}
+			}
+		}else{
+			if(_userSock == null){
+				throw new NullPointerException();
+			}else{
+				//_elog("Already closed");
+				_userSock = null;
+				_in = null;
+				_out = null;
 			}
 		}
-	}
-	
-	/**
-	 * Constructor
-	 */
-	public DropboxFileServerMasterNet(DropboxFileServer server){
-		_serverIP = DropboxConstants.MASTER_IP;
-		_serverPort = DropboxConstants.MASTER_CLUSTER_PORT;
-		_sock = null;
-		_server = server;
-		assert _server != null;
-	}
-	
-	/**
-	 * Getters
-	 */
-	public String getServerIP(){
-		return _serverIP;
-	}
-	
-	public int getPort(){
-		return _serverPort;
-	}
-	
-	public Socket getSocket(){
-		return _sock;
-	}
-	
-	public boolean isConnected(){
-		return _sock.isConnected();
+		_dlog("Finished");
 	}
 }

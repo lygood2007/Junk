@@ -18,7 +18,9 @@ class DropboxFileServer {
 	private boolean _useUI;
 	private String _disk; // The location of the disk, is indeed the directory. 
 	                             // Just simulate.
-	private DropboxFileServerNet _serverNet;
+	//private DropboxFileServerMasterNettmp _serverNet;
+	//private DropboxFileServerListenNet _clientNet;
+	private DropboxFileServerMasterNet _masterNet;
 	private Map<String, String> _map;
 	private int _id; // The unique identifier for this file server
 	private int _prio; // The priority of this file server. (1->5)
@@ -30,7 +32,7 @@ class DropboxFileServer {
 			System.out.println("[DropboxFileServer (DEBUG)]:" + str);
 	}
 	
-	private static void _elog(String str){
+	private void _elog(String str){
 		System.err.println("[DropboxFileServer (ERROR)]:" + str);
 	}
 	
@@ -74,22 +76,47 @@ class DropboxFileServer {
     
     private void initNet(){
     	_dlog("Initialize network..");
-    	_serverNet = new DropboxFileServerNet(this);
+    	_masterNet = new DropboxFileServerMasterNet(this);
     }
     
     public void run(){
-    	connectToMaster();
+    	if(connectToMaster() == true){
+    		// Spawn a new thread to listen to new clients
+    		listenToClients();
+    		// Use main thread to accepting master's message
+    		// Block here until socket is closed
+    		_masterNet.listen();
+    	}
+    	_dlog("Done!");
     }
     
-    private void connectToMaster(){
+    /**
+     * connectToMaster: Connect to master using two threads ((main and another)).
+     *                  main thread: mainly accept master's heartbeat message
+     *                  and master's forwarded request from client.
+     *                  new thread: mainly get input from user and request master.
+     */
+    private boolean connectToMaster(){
     	// Let the miracle happen!
-    	_serverNet.openConnections();
-    	//_serverNet.listenToClients();
+    	return _masterNet.openConnections();
     }
     
-    public void addClient(String clientName){
+    /**
+     * listenToClients: listen to new client (spawn a new thread)
+     */
+    private void listenToClients(){
+    	
+    }
+    
+    public boolean addClient(String clientName){
     	assert _disk != null;
-    	File newDir =  new File(_disk +  System.getProperty("file.separator") + clientName);
+    	if(_map.containsKey(clientName)){
+    		_elog("Client already exist");
+    		return false;
+    	}
+    	// we create a new name for this client
+    	String fullpath = _disk +  System.getProperty("file.separator") + clientName;
+    	File newDir =  new File(fullpath);
     	_dlog("Add client " + clientName);
     	if (!newDir.exists()) {
     		_log("Creating directory: " +newDir);
@@ -97,32 +124,53 @@ class DropboxFileServer {
 
     		if(result) {    
     			_log(newDir + " created.");  
-    			_map.put(clientName, newDir.getName());
+    			_map.put(clientName, fullpath);
     		}
     		else{
     			_elog("Cannot create the directory");
     			// TODO: a better way to tell the client that it's failed
     			//System.exit(1);
+    			return false;
     		}
     	}
     	_dlog("Client root: " + _disk);
-    	
+    	return true;
     }
     
-    public void removeClient(String clientName){
-    	
+    public boolean removeClient(String clientName){
+    	if(!_map.containsKey(clientName)){
+    		return false;
+    	}else
+    	{
+    		// remove the file
+    		File tmp = new File(_map.get(clientName));
+    		if(!tmp.delete()){
+    			return false;
+    		}
+    		else
+    		{
+    			_map.remove(clientName);
+    			return true;
+    		}
+    	}
     }
     
     public void printStatus(){
-    	_log("Dropbox File Server configuration:");
-    	_log("ID:" + Integer.toString(_id));
-    	_log("Debug:" + Boolean.toString(_debug));
-    	_log("UseUI:" + Boolean.toString(_useUI));
-    	_log("Priority:" + Integer.toString(_prio));
-    	_log("Max Client Num:" + Integer.toString(_maxClientNum));
-    	_log("Current Client Num:" + Integer.toString(_map.size()));
+    	_log("**Dropbox File Server configuration:");
+    	_log("ID:" + _id);
+    	_log("Debug:" + _debug);
+    	_log("UseUI:" + _useUI);
+    	_log("Priority:" + _prio);
+    	_log("Max Client Num:" + _maxClientNum);
+    	_log("Current Client Num:" + _map.size());
     	_log("Root disk:" + _disk);
-    	_log("Listen port:" + Integer.toString(_port));
+    	_log("Listen port:" + _port);
+    	Map<String, String> mp = _map;
+		Iterator it = mp.entrySet().iterator();
+		while(it.hasNext()){
+			Map.Entry pair = (Map.Entry)it.next();
+			 _log("<Clients name>:" + pair.getKey() + " <Client dir>	:" +pair.getValue()); 
+		}
     	System.out.println();
     }
     
@@ -132,11 +180,15 @@ class DropboxFileServer {
     	_log("-id give an id to this server");
     	_log("-d: for debug mode (default false)" );
     	_log("-u: to use user interface (default false)");
-    	_log("-p: to specify port for listening (default 5000)");
+    	_log("-p: to specify port for listening (default "+
+    			DropboxConstants.FILE_SERVER_PORT+")");
     	_log("-disk: root your server is located"
-    			+ " (default using cwd/ServerRoot, where cwd is your current working directory)");
-    	_log("-prio: the priority of this server (1-5)");
-    	_log("-mc: the max number of clients can be connected in this server (0-3)");
+    			+ " (default using cwd/"+DropboxConstants.FILE_SERVER_ROOT+
+    			", where cwd is your current working directory)");
+    	_log("-prio: the priority of this server ("+DropboxConstants.MIN_PRIO+
+    			"-"+DropboxConstants.MAX_PRIO+")");
+    	_log("-mc: the max number of clients can be connected in this server (0-"+
+    			DropboxConstants.MAX_CLIENTS_IN_FS+")");
     	
     	System.out.println();
     }
@@ -144,7 +196,6 @@ class DropboxFileServer {
     /**
      * Getters
      */
-    
     public boolean debugMode(){
     	return _debug;
     }
@@ -188,14 +239,13 @@ class DropboxFileServer {
     public static void main(String[] args) {
     	
     	int port = DropboxConstants.FILE_SERVER_PORT;
-    	boolean debug = true;
+    	boolean debug = false;
     	boolean useUI = false;	
-    	String disk = DropboxConstants.DROPBOX_SERVER_ROOT;
+    	String disk = DropboxConstants.FILE_SERVER_ROOT;
     	int id = 0;
     	int prio = 1;
     	int maxClientNum = DropboxConstants.MAX_CLIENTS_IN_FS;
     	
-    	//usage();
     	if(args.length < 2){
     		usage();
     		System.exit(1);
@@ -230,13 +280,8 @@ class DropboxFileServer {
 				maxClientNum = Math.min(maxClientNum, DropboxConstants.MAX_CLIENTS_IN_FS);
 			}
     	}
-    	while(true)
-    	{
-    		Scanner in = new Scanner(System.in);
-    		String s = in.nextLine();
-			_log("input:");
-    	}
-    	//DropboxFileServer server = new DropboxFileServer(id, prio, maxClientNum, port,debug,useUI,disk);
-    	//server.run();
+    	
+    	DropboxFileServer server = new DropboxFileServer(id, prio, maxClientNum, port,debug,useUI,disk);
+    	server.run();
     }
 }
